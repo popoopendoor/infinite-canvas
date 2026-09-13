@@ -1,25 +1,9 @@
-import axios, { type AxiosRequestConfig } from "axios";
-
 import i18n from "@/i18n";
-import { buildApiUrl, withLocalProxy, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { abandonModelCapability, completeModelCapability, fetchModelTask, requestModelCapability, startModelCapability, type CapabilityProxyRequest } from "./model-task";
+import ModelPluginWorker from "./model-plugin-worker?worker";
 
-type RequestOptions = { signal?: AbortSignal };
-
-export type PluginHttpOptions = {
-    headers?: Record<string, string>;
-    params?: Record<string, unknown>;
-    responseType?: "json" | "blob" | "text" | "arraybuffer";
-};
-
-export type PluginHttp = {
-    url: (path: string) => string;
-    post: (path: string, body?: unknown, options?: PluginHttpOptions) => Promise<unknown>;
-    get: (path: string, options?: PluginHttpOptions) => Promise<unknown>;
-};
-
-export type PluginPollOptions = { intervalMs?: number; timeoutMs?: number };
-
-export type RunPluginArgs = {
+type RunPluginArgs = {
     capability: ModelCapability;
     script: string;
     config: AiConfig;
@@ -31,139 +15,212 @@ export type RunPluginArgs = {
     params?: Record<string, unknown>;
     signal?: AbortSignal;
     onDelta?: (text: string) => void;
+    onTask?: (task: { id: string }) => void;
 };
 
-function pluginHeaders(extra?: Record<string, string>, hasJsonBody = false): Record<string, string> {
-    const headers: Record<string, string> = {};
-    if (hasJsonBody) headers["Content-Type"] = "application/json";
-    return { ...headers, ...extra };
-}
-
-function pluginUrl(config: AiConfig, path: string) {
-    if (/^https?:/i.test(path)) return withLocalProxy(path);
-    return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
-}
-
-function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
-    const run = async (method: "get" | "post", path: string, body: unknown, opts?: PluginHttpOptions) => {
-        const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-        const response = await axios.request({
-            method,
-            url: pluginUrl(config, path),
-            data: method === "post" ? body : undefined,
-            params: opts?.params,
-            headers: pluginHeaders({ Authorization: `Bearer ${config.apiKey}`, ...opts?.headers }, method === "post" && !isForm && body !== undefined),
-            responseType: opts?.responseType || "json",
-            signal: options?.signal,
-        });
-        return response.data;
-    };
-    return {
-        url: (path) => pluginUrl(config, path),
-        post: (path, body, opts) => run("post", path, body, opts),
-        get: (path, opts) => run("get", path, undefined, opts),
-    };
-}
-
-/** Raw request with no automatic auth header — the script controls method, url, headers, body entirely. */
-function createPluginRequest(config: AiConfig, options?: RequestOptions) {
-    return async (requestConfig: AxiosRequestConfig & { url: string }) => {
-        const response = await axios.request({ ...requestConfig, url: pluginUrl(config, requestConfig.url), signal: options?.signal });
-        return response.data;
-    };
-}
-
-function sleep(ms: number, signal?: AbortSignal) {
-    return new Promise<void>((resolve, reject) => {
-        if (signal?.aborted) {
-            reject(new DOMException("Aborted", "AbortError"));
-            return;
-        }
-        const timer = setTimeout(resolve, ms);
-        signal?.addEventListener(
-            "abort",
-            () => {
-                clearTimeout(timer);
-                reject(new DOMException("Aborted", "AbortError"));
-            },
-            { once: true },
-        );
-    });
-}
-
-function createPoll(signal?: AbortSignal) {
-    return async function poll<T, R>(request: () => Promise<T>, extract: (value: T) => R | null | undefined | false, options?: PluginPollOptions): Promise<R> {
-        const intervalMs = options?.intervalMs ?? 2500;
-        const timeoutMs = options?.timeoutMs ?? 300000;
-        const deadline = performance.now() + timeoutMs;
-        for (;;) {
-            if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-            const result = extract(await request());
-            if (result !== null && result !== undefined && result !== false) return result;
-            if (performance.now() >= deadline) throw new Error(i18n.t("modelPlugin.pollTimeout"));
-            await sleep(intervalMs, signal);
-        }
-    };
-}
-
-/**
- * Run a user-authored model call script. Locals are injected (see PLUGIN_VARIABLES); templates wrap them in an async function.
- * The script still runs as an async function body and must `return` the result.
- */
 export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<T> {
     const { config } = args;
-    const http = createPluginHttp(config, { signal: args.signal });
-    const request = createPluginRequest(config, { signal: args.signal });
-    const poll = createPoll(args.signal);
-    const runner = new Function(
-        "prompt",
-        "images",
-        "videos",
-        "audios",
-        "messages",
-        "params",
-        "model",
-        "baseUrl",
-        "apiKey",
-        "systemPrompt",
-        "reasoningEffort",
-        "http",
-        "request",
-        "poll",
-        "sleep",
-        "signal",
-        "onDelta",
-        `"use strict"; return (async () => {\n${args.script}\n})();`,
-    ) as (...fnArgs: unknown[]) => Promise<T>;
+    if (!args.script.trim()) throw new Error(i18n.t("modelPlugin.scriptRequired"));
+    const scriptHash = await hashScript(args.script);
+    const references = [...(args.images || []).map((dataUrl) => ({ dataUrl })), ...(await fileReferences(args.videos || [])), ...(await fileReferences(args.audios || []))];
+    const grant = await startModelCapability({
+        config,
+        capability: args.capability,
+        scriptHash,
+        prompt: args.prompt,
+        messages: args.messages,
+        params: args.params || {},
+        references,
+        signal: args.signal,
+    });
+    args.onTask?.(grant.task);
     try {
-        return await runner(
-            args.prompt || "",
-            args.images || [],
-            args.videos || [],
-            args.audios || [],
-            args.messages || [],
-            args.params || {},
-            config.model,
-            config.baseUrl,
-            config.apiKey,
-            config.systemPrompt || "",
-            config.reasoningEffort,
-            http,
-            request,
-            poll,
-            (ms: number) => sleep(ms, args.signal),
-            args.signal,
-            args.onDelta,
-        );
+        const result = await runPluginWorker<T>(args, grant.token, grant.target);
+        const resolved = await materializePluginMedia(args.capability, result, grant.token, args.config.apiKey, args.signal);
+        const completed = await completeCapabilityOrRecover(grant.task.id, grant.token, await serializePluginResult(resolved), args.signal);
+        if (completed.status !== "succeeded") throw new Error(i18n.t("modelPlugin.taskIncomplete"));
+        return resolved as T;
     } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        if (axios.isCancel(error)) throw error;
+        if (error instanceof DOMException && error.name === "AbortError") {
+            await abandonModelCapability(grant.token);
+            throw error;
+        }
+        if (isUnknownCapabilityError(error)) {
+            await abandonModelCapability(grant.token);
+            throw error;
+        }
         const message = error instanceof Error ? error.message : String(error);
+        await completeModelCapability(grant.token, false, undefined, message).catch(() => undefined);
         throw new Error(i18n.t("modelPlugin.executionFailed", { message }));
     }
 }
 
-export type PluginVariable = { name: string; type: string; desc: string; capabilities?: ModelCapability[] };
+function runPluginWorker<T>(args: RunPluginArgs, token: string, target: { baseUrl: string; model: string }) {
+    return new Promise<T>((resolve, reject) => {
+        const worker = new ModelPluginWorker();
+        const channel = new MessageChannel();
+        const abort = () => {
+            worker.postMessage({ type: "abort" });
+            finish(() => reject(new DOMException("Aborted", "AbortError")));
+        };
+        const cleanup = () => {
+            worker.terminate();
+            channel.port1.close();
+            args.signal?.removeEventListener("abort", abort);
+        };
+        const finish = (settle: () => void) => {
+            cleanup();
+            settle();
+        };
+        if (args.signal?.aborted) return abort();
+        args.signal?.addEventListener("abort", abort, { once: true });
+        channel.port1.onmessage = (event: MessageEvent<PluginWorkerMessage>) => {
+            const message = event.data;
+            if (message.type === "proxy-request") {
+                void capabilityRequest(token, args.config.apiKey, message.request, args.signal).then(
+                    (data) => channel.port1.postMessage({ type: "proxy-response", requestId: message.requestId, data }),
+                    (error: unknown) => channel.port1.postMessage({ type: "proxy-error", requestId: message.requestId, error: serializeWorkerError(error) }),
+                );
+                return;
+            }
+            if (message.type === "delta") {
+                args.onDelta?.(message.value);
+                return;
+            }
+            if (message.type === "completed") return finish(() => resolve(message.result as T));
+            return finish(() => reject(workerError(message.error)));
+        };
+        channel.port1.start();
+        worker.onerror = () => finish(() => reject(new Error(i18n.t("modelPlugin.executionFailed", { message: "worker failed" }))));
+        worker.postMessage(
+            {
+                type: "run",
+                script: args.script,
+                prompt: args.prompt || "",
+                images: args.images || [],
+                videos: args.videos || [],
+                audios: args.audios || [],
+                messages: args.messages || [],
+                params: args.params || {},
+                model: target.model,
+                baseUrl: target.baseUrl,
+                // Custom scripts must not receive the capability token or saved provider key.
+                apiKey: "canvas-managed",
+                systemPrompt: args.config.systemPrompt || "",
+                reasoningEffort: args.config.reasoningEffort,
+            },
+            [channel.port2],
+        );
+    });
+}
+
+async function completeCapabilityOrRecover(taskId: string, token: string, result: unknown, signal?: AbortSignal) {
+    try {
+        return await completeModelCapability(token, true, result, undefined, signal);
+    } catch (error) {
+        const recovered = await fetchModelTask(taskId, signal).catch(() => null);
+        if (recovered?.status === "succeeded") return recovered;
+        throw error;
+    }
+}
+
+async function fileReferences(files: File[]) {
+    return Promise.all(
+        files.map(async (file) => ({
+            dataUrl: `data:${file.type || "application/octet-stream"};base64,${base64FromBytes(new Uint8Array(await file.arrayBuffer()))}`,
+            mimeType: file.type || "application/octet-stream",
+        })),
+    );
+}
+
+async function capabilityRequest(token: string, apiKey: string, request: CapabilityProxyRequest, signal?: AbortSignal) {
+    const data = await requestModelCapability(token, apiKey, request, signal);
+    return decodeCapabilityResponse(data, request.responseType);
+}
+
+async function materializePluginMedia(capability: ModelCapability, value: unknown, token: string, apiKey: string, signal?: AbortSignal): Promise<unknown> {
+    if (capability === "text") return value;
+    if (typeof value === "string") {
+        if (!isRemoteUrl(value)) return value;
+        const media = await capabilityRequest(token, apiKey, { method: "GET", url: value, headers: {}, responseType: "blob" }, signal);
+        if (!(media instanceof Blob)) throw new Error("Model media response is invalid");
+        return blobDataUrl(media);
+    }
+    if (Array.isArray(value)) return Promise.all(value.map((item) => materializePluginMedia(capability, item, token, apiKey, signal)));
+    if (!value || typeof value !== "object") return value;
+    const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await materializePluginMedia(capability, item, token, apiKey, signal)] as const));
+    return Object.fromEntries(entries);
+}
+
+function isRemoteUrl(value: string) {
+    try {
+        return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+        return false;
+    }
+}
+
+function blobDataUrl(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error || new Error("Could not read model media"));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function decodeCapabilityResponse(value: unknown, responseType?: CapabilityProxyRequest["responseType"]) {
+    if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "binary")
+        return value && typeof value === "object" && (value as { kind?: unknown }).kind === "text" && responseType !== "json" ? (value as { text: string }).text : value;
+    const binary = atob((value as { base64: string }).base64);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (responseType === "arraybuffer") return bytes.buffer;
+    return new Blob([bytes], { type: (value as { contentType?: string }).contentType || "application/octet-stream" });
+}
+
+async function serializePluginResult(value: unknown): Promise<unknown> {
+    if (value instanceof Blob) return { kind: "binary", contentType: value.type || "application/octet-stream", base64: base64FromBytes(new Uint8Array(await value.arrayBuffer())) };
+    if (value instanceof ArrayBuffer) return { kind: "binary", contentType: "application/octet-stream", base64: base64FromBytes(new Uint8Array(value)) };
+    if (Array.isArray(value)) return Promise.all(value.map(serializePluginResult));
+    if (value && typeof value === "object") {
+        const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await serializePluginResult(item)] as const));
+        return Object.fromEntries(entries);
+    }
+    return value;
+}
+
+function base64FromBytes(bytes: Uint8Array) {
+    let value = "";
+    bytes.forEach((byte) => {
+        value += String.fromCharCode(byte);
+    });
+    return btoa(value);
+}
+
+async function hashScript(script: string) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(script));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function isUnknownCapabilityError(error: unknown) {
+    return error instanceof Error && "code" in error && ["provider_unknown", "service_unavailable"].includes(String((error as { code?: unknown }).code));
+}
+
+type SerializedWorkerError = { name: string; message: string };
+
+type PluginWorkerMessage = { type: "proxy-request"; requestId: string; request: CapabilityProxyRequest } | { type: "delta"; value: string } | { type: "completed"; result: unknown } | { type: "failed"; error: SerializedWorkerError };
+
+function serializeWorkerError(error: unknown): SerializedWorkerError {
+    return error instanceof Error ? { name: error.name, message: error.message } : { name: "Error", message: String(error) };
+}
+
+function workerError(value: SerializedWorkerError) {
+    const error = new Error(value.message);
+    error.name = value.name;
+    return error;
+}
+
+type PluginVariable = { name: string; type: string; desc: string; capabilities?: ModelCapability[] };
 
 /** Documentation surface shown in the script editor. */
 export function getPluginVariables(): PluginVariable[] {
@@ -221,14 +278,14 @@ export function getPluginAuthoringPrompt(capability: ModelCapability, modelName:
     return lines.join("\n");
 }
 
-export type PluginTemplate = { label: string; script: string };
+type PluginTemplate = { label: string; script: string };
 
 export function getPluginTemplates(): Record<ModelCapability, PluginTemplate[]> {
     return {
-    image: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
+        image: [
+            {
+                label: i18n.t("modelPlugin.templates.openai"),
+                script: `/**
  * OpenAI image generation and editing.
  * Text-to-image uses POST /v1/images/generations (JSON) when images is empty.
  * Image editing uses POST /v1/images/edits (multipart) when images has data URLs.
@@ -320,10 +377,10 @@ return await generateImage({
   apiKey,
   request,
 });`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
+            },
+            {
+                label: i18n.t("modelPlugin.templates.gemini"),
+                script: `/**
  * Gemini image generation via models/{model}:generateContent.
  * Reference images go into parts.inline_data. size maps to aspectRatio; quality maps to imageSize.
  * @param {string} prompt
@@ -432,12 +489,12 @@ return await generateImage({
   apiKey,
   request,
 });`,
-        },
-    ],
-    video: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
+            },
+        ],
+        video: [
+            {
+                label: i18n.t("modelPlugin.templates.openai"),
+                script: `/**
  * OpenAI-compatible video: POST /v1/videos (multipart), then poll GET /v1/videos/{id}.
  * Do not set Content-Type on FormData; the browser adds the boundary.
  * @param {string} prompt
@@ -555,10 +612,10 @@ return await generateVideo({
   request,
   poll,
 });`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
+            },
+            {
+                label: i18n.t("modelPlugin.templates.gemini"),
+                script: `/**
  * Gemini Veo video: POST models/{model}:predictLongRunning, then poll the operation.
  * First/last-frame mode: images[0] -> image, images[1] -> lastFrame.
  * Reference mode: all images -> referenceImages.
@@ -715,12 +772,12 @@ return await generateVideo({
   request,
   poll,
 });`,
-        },
-    ],
-    audio: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
+            },
+        ],
+        audio: [
+            {
+                label: i18n.t("modelPlugin.templates.openai"),
+                script: `/**
  * OpenAI speech: POST /v1/audio/speech.
  * @param {string} prompt - text to speak
  * @param {object} params
@@ -774,10 +831,10 @@ return await generateAudio({
   apiKey,
   request,
 });`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
+            },
+            {
+                label: i18n.t("modelPlugin.templates.gemini"),
+                script: `/**
  * Gemini TTS: POST models/{model}:generateContent with AUDIO modality.
  * Audio bytes are returned in inlineData.data (base64 PCM).
  * @param {string} prompt - text to speak
@@ -843,12 +900,12 @@ return await generateAudio({
   apiKey,
   request,
 });`,
-        },
-    ],
-    text: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
+            },
+        ],
+        text: [
+            {
+                label: i18n.t("modelPlugin.templates.openai"),
+                script: `/**
  * OpenAI text: POST /v1/responses.
  * @param {{role: string, content: string}[]} messages - includes the system message when present
  * @param {string} model
@@ -902,10 +959,10 @@ return await generateText({
   request,
   onDelta,
 });`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
+            },
+            {
+                label: i18n.t("modelPlugin.templates.gemini"),
+                script: `/**
  * Gemini text: POST models/{model}:generateContent.
  * System messages are skipped in contents; systemPrompt goes to systemInstruction.
  * @param {{role: string, content: string}[]} messages
@@ -968,8 +1025,8 @@ return await generateText({
   request,
   onDelta,
 });`,
-        },
-    ],
+            },
+        ],
     };
 }
 
@@ -982,7 +1039,7 @@ export function normalizePluginImages(result: unknown): string[] {
             if (item && typeof item === "object") {
                 const record = item as Record<string, unknown>;
                 if (typeof record.dataUrl === "string") return record.dataUrl;
-                if (typeof record.url === "string") return record.url;
+                if (typeof record.url === "string" && record.url.startsWith("data:")) return record.url;
                 if (typeof record.b64_json === "string") return `data:image/png;base64,${record.b64_json}`;
             }
             return "";

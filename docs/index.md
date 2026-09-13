@@ -38,4 +38,4 @@
 ## Notes
 
 - Canvas projects and My Assets are primarily stored in the browser. WebDAV can be configured for cross-device synchronization.
-- The AI API key is stored in the browser, which sends requests directly to OpenAI-compatible endpoints.
+- Local BYOK API keys remain in the browser and are sent to the Canvas BFF only as one-time encrypted envelopes; OAuth, bridge tokens, and provider service credentials stay server-side.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
++ [新增] 接入 Flarum OAuth、独立 Canvas BFF、Money Bridge、发布模型目录和服务端计费状态机；真实论坛与 Docker 联调仍待完成。
++ [新增] 登录后自动载入服务端托管模型，按 provider endpoint 建立可用配置，模型调用统一经过 `money` hold/capture 计费。
++ [新增] 自定义模型脚本通过短期 BFF capability 和受控 provider proxy 执行，并纳入 `money` hold/capture/release 对账边界。
++ [修复] Docker 构建不再把宿主机的 native `node_modules` 覆盖进 BFF 镜像，避免 `better-sqlite3` 在容器启动时出现 ELF 格式错误。
 + [调整] 开启本地代理后，WebDAV 测试连接和同步也经本机代理转发，关闭后仍直连。
 + [修复] WebDAV 同步会记录已删除画布，再次同步时不再把远端旧画布恢复到本地。
 + [新增] 配置弹窗新增「本地代理」页签，开启后模型列表、生图、生视频、生成文本、生成音频等请求经本机代理转发，配套发布 `npx @basketikun/canvas-proxy@latest` 纯转发工具。

@@ -5,7 +5,7 @@ description: Frontend-first local development
 
 # Local Development
 
-The main application lives in `web/`. The browser sends AI requests directly to the user's OpenAI-compatible endpoint.
+The main application consists of the `web/` frontend and the `server/` Canvas BFF. OAuth-authenticated and billed model requests go through the BFF; the local Agent still runs on the user's computer.
 
 ## Start the frontend
 
@@ -15,7 +15,25 @@ bun install
 bun run dev
 ```
 
-Open `http://localhost:3000`, then enter your `Base URL`, `API Key`, and model names in Settings. Prompt sources and WebDAV are also accessed directly by the browser.
+Open `http://localhost:3000`. Prompt sources and WebDAV are also accessed directly by the browser.
+
+## Start the BFF
+
+In another terminal:
+
+```bash
+cd server
+npm ci
+npm run dev
+```
+
+Vite proxies `/auth`, `/api`, and `/health` to `http://localhost:3001`.
+
+## Configure models
+
+Set `MODEL_CATALOG_JSON` and `MODEL_PROVIDER_KEYS_JSON` in the BFF environment. After login, models mapped to a server key appear automatically in the `Canvas managed` provider and use the fixed prices from the catalog against the Flarum `money` balance. The server owns the managed endpoint, protocol, and model list.
+
+BYOK remains available: publish the model without a server key, then enter its `Base URL` and `API Key` in Settings. The browser keeps the BYOK key and encrypts it before the BFF request; every model request started in Canvas still uses the same billed path.
 
 ## Start the documentation site
 

@@ -27,9 +27,9 @@ description: Major features available in the current project
 
 ## AI generation
 
-- Connect to user-provided OpenAI-compatible endpoints directly from the browser.
+- Use the Canvas BFF for OAuth-authenticated, published-model requests and `money` billing; local BYOK configuration remains in the browser and is encrypted for the BFF request.
 - Configure multiple channels, fetch or enter model names, and choose default text, image, and video models.
-- Support image count, aspect ratio, quality, transparent backgrounds, reasoning effort, and custom invocation scripts.
+- Support image count, aspect ratio, quality, transparent backgrounds, and reasoning effort. Custom invocation scripts remain editable locally and run in a Web Worker through a short-lived BFF capability and provider proxy. The Worker keeps page storage out of the script context, while the BFF remains the security and billing boundary.
 - Support OpenAI-style video endpoints.
 
 ## Canvas Agent
@@ -63,5 +63,5 @@ See [Third-party Prompt Sources](/docs/overview/third-party-prompt-repositories)
 ## Current limitations
 
 - The project is frontend-first and does not provide built-in cloud accounts or cloud storage.
-- API keys remain in browser storage and requests are sent directly to configured providers.
+- Local BYOK keys remain in browser storage and are sent to the BFF only as one-time encrypted envelopes; OAuth and bridge tokens are server-only.
 - Production Docker static-resource paths still require broader deployment verification.

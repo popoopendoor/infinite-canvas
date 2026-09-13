@@ -7,3 +7,42 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      bff:
+        condition: service_healthy
+
+  bff:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      DATABASE_PATH: /var/lib/canvas-bff/canvas.sqlite
+      FLARUM_BASE_URL: ${FLARUM_BASE_URL:-}
+      FLARUM_INTERNAL_BASE_URL: ${FLARUM_INTERNAL_BASE_URL:-}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-60000}
+      BRIDGE_URL: ${BRIDGE_URL:-}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:-}
+      # Keep the fallback empty for UI-only development; set MODEL_CATALOG_JSON
+      # and MODEL_PROVIDER_KEYS_JSON in .env for a usable billed model after login.
+      MODEL_CATALOG_JSON: ${MODEL_CATALOG_JSON:-[]}
+      MODEL_PROVIDER_KEYS_JSON: ${MODEL_PROVIDER_KEYS_JSON:-{}}
+      PROVIDER_BASE_URL_ALLOWLIST: ${PROVIDER_BASE_URL_ALLOWLIST:-}
+    volumes:
+      - canvas-bff-data:/var/lib/canvas-bff
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  canvas-bff-data:

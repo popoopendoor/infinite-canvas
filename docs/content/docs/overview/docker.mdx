@@ -5,21 +5,27 @@ description: Deploy Infinite Canvas with Docker Compose
 
 # Docker Deployment
 
-## Use the published image
+## Run the full stack
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:popoopendoor/infinite-canvas.git
 cd infinite-canvas
-docker compose up -d
+cp .env.example .env
+# Edit .env with the Flarum OAuth, bridge, model catalog, and provider allowlist values.
+docker compose up -d --build
 ```
 
 Open `http://localhost:3000`.
+
+The production Compose file starts the Nginx frontend and the independent Node.js BFF. The Flarum Money Bridge is installed separately in the Flarum site; it is not included in the Canvas image. `OAUTH_REDIRECT_URI` must exactly match the callback registered in Flarum.
 
 ## Build locally
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
+
+The local file allows empty integration settings for UI and health-check work. OAuth and billed model requests require the corresponding values in `.env`.
 
 ## Documentation image
 
@@ -37,7 +43,7 @@ cd docs
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-The main application container only runs Next.js. Canvases, My Assets, generation history, and API keys are stored in the browser by default, while prompt repositories are fetched directly by the frontend. No persistent data volume is required for this data.
+Canvas projects, My Assets, generation history, and local provider configuration remain in the browser by default. The BFF stores sessions, task states, and reconciliation data in the `canvas-bff-data` volume. Do not expose that volume or the OAuth, bridge, and provider credentials.
 
 ## Optional analytics
 
@@ -51,7 +57,7 @@ No analytics are enabled by default. A deployment can enable GA4, Baidu Analytic
 ```yaml
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: infinite-canvas:latest
     ports:
       - "3000:3000"
     environment:

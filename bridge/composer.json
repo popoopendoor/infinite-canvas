@@ -1,0 +1,25 @@
+{
+  "name": "popoopendoor/canvas-money-bridge",
+  "description": "Flarum wallet bridge for Infinite Canvas",
+  "type": "flarum-extension",
+  "license": "MIT",
+  "require": {
+    "flarum/core": "^1.8",
+    "antoinefr/flarum-ext-money": "^1.4"
+  },
+  "extra": {
+    "flarum-extension": {
+      "title": "Canvas Money Bridge",
+      "icon": {
+        "name": "fas fa-coins",
+        "backgroundColor": "#1f2937",
+        "color": "#fbbf24"
+      }
+    }
+  },
+  "autoload": {
+    "psr-4": {
+      "Popoopendoor\\CanvasMoneyBridge\\": "src/"
+    }
+  }
+}

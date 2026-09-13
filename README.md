@@ -6,16 +6,16 @@
 
 <p align="center">
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
-  <a href="https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
-  <a href="https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/github/stars/basketikun/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="https://github.com/basketikun/infinite-canvas/tags"><img src="https://img.shields.io/github/v/tag/basketikun/infinite-canvas?style=flat-square&label=version" alt="Version"></a>
+  <a href="https://render.com/deploy?repo=https://github.com/popoopendoor/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
+  <a href="https://github.com/popoopendoor/infinite-canvas"><img src="https://img.shields.io/github/stars/popoopendoor/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/popoopendoor/infinite-canvas/tags"><img src="https://img.shields.io/github/v/tag/popoopendoor/infinite-canvas?style=flat-square&label=version" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f97316?style=flat-square" alt="License"></a>
   <a href="https://vite.dev/"><img src="https://img.shields.io/badge/Vite-7-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite"></a>
   <a href="https://reactrouter.com/"><img src="https://img.shields.io/badge/React_Router-7-ca4245?style=flat-square&logo=reactrouter&logoColor=white" alt="React Router"></a>
 </p>
 
 <p align="center">
-<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="basketikun%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/50077?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-50077" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/50077" alt="popoopendoor%2Finfinite-canvas | Trendshift" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -74,17 +74,17 @@
 ## 核心功能
 
 - 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
-- AI 创作：浏览器前台直连你配置的 OpenAI 兼容接口，支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
+- AI 创作：通过 Canvas BFF 对受发布模型执行 OAuth 身份校验与 `money` 计费；支持文生图、图生图、参考图编辑、文本问答、音频和视频生成。
 - 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
 - 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布；
 - Codex App 插件：提供 Codex app 插件，安装后会自动注册 MCP 并尝试拉起本地 Agent。
 - 插件系统：支持通过 URL 动态安装 / 启用 / 更新 / 卸载远程节点插件，并提供 TypeScript SDK 自行开发画布节点插件。
-- 自定义接口调用：可自定义生图 / 视频接口的调用方式，灵活适配各类中转站与自建服务。
+- 自定义接口调用：脚本配置仍保存在本地；纳入 `money` 计费的生成目前必须使用内置 BFF adapter，未接入计费协议的脚本会明确拒绝执行。
 - 提示词库：内置 7 个开源提示词来源并支持自定义标准 JSON 来源，由浏览器前端直连并缓存到 IndexedDB。
 
 完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
 
-如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
+如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/popoopendoor/chatgpt2api)
 
 ## 快速开始
 
@@ -93,7 +93,7 @@ AI API Key、Base URL、画布、素材和生成记录默认保存在浏览器�
 ### 本地开发
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:popoopendoor/infinite-canvas.git
 cd infinite-canvas
 cd web
 bun install
@@ -103,16 +103,17 @@ bun run dev
 ### Docker 运行
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:popoopendoor/infinite-canvas.git
 cd infinite-canvas
-docker compose up -d
+cp .env.example .env
+docker compose up -d --build
 ```
 
 运行后默认端口3000，可访问 `http://localhost:3000`。
 
-首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
+登录后，服务端发布并配置了 provider key 的模型会自动加入 `Canvas 托管` 配置，调用会经过 BFF 的 money hold/capture 计费链路；也可以继续在配置中使用 BYOK。Flarum OAuth、bridge 和模型目录配置参见 [server/README.md](server/README.md)。
 
-如果默认的OpenAI接口调用方式与您的API不同，可自定义生图/视频脚本调用。
+如果默认的 OpenAI 接口调用方式与您的 API 不同，仍可编辑并保存生图/视频脚本；计费生成目前仅执行已接入 BFF 的内置 adapter。
 
 ## 效果展示
 
@@ -159,10 +160,10 @@ docker compose up -d
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=basketikun%2Finfinite-canvas&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=popoopendoor%2Finfinite-canvas&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=popoopendoor/infinite-canvas&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=popoopendoor/infinite-canvas&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=popoopendoor/infinite-canvas&type=date&legend=top-left" />
  </picture>
 </a>

@@ -4,9 +4,11 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
+import type { PublishedModel, ModelCapability } from "@/types/model-catalog";
+
+export type { ModelCapability } from "@/types/model-catalog";
 
 export type ApiCallFormat = "openai" | "gemini";
-export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
 export type ChannelModel = {
@@ -22,6 +24,7 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    managed?: boolean;
 };
 
 export type AiConfig = {
@@ -74,6 +77,8 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+export const MANAGED_CHANNEL_ID = "canvas-managed";
+export const MANAGED_PROVIDER_MARKER = "canvas-managed";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
@@ -82,26 +87,12 @@ export const defaultConfig: AiConfig = {
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
-    channels: [
-        {
-            id: "default",
-            name: i18n.t("config.channels.defaultName"),
-            baseUrl: OPENAI_BASE_URL,
-            apiKey: "",
-            apiFormat: "openai",
-            models: [
-                { name: "gpt-image-2", capability: "image" },
-                { name: "grok-imagine-video", capability: "video" },
-                { name: "gpt-5.5", capability: "text" },
-                { name: "gpt-4o-mini-tts", capability: "audio" },
-            ],
-        },
-    ],
-    model: "default::gpt-image-2",
-    imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
-    textModel: "default::gpt-5.5",
-    audioModel: "default::gpt-4o-mini-tts",
+    channels: [],
+    model: "",
+    imageModel: "",
+    videoModel: "",
+    textModel: "",
+    audioModel: "",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -113,7 +104,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: [],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -138,6 +129,7 @@ type ConfigStore = {
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    applyPublishedModels: (models: PublishedModel[]) => void;
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
@@ -180,6 +172,10 @@ export function modelMatchesCapability(config: AiConfig, value: string, capabili
     return modelCapabilityOf(config, value) === capability;
 }
 
+export function isManagedChannel(channel: ModelChannel | undefined) {
+    return Boolean(channel?.managed === true && channel.apiKey === MANAGED_PROVIDER_MARKER && (channel.id === MANAGED_CHANNEL_ID || channel.id.startsWith(`${MANAGED_CHANNEL_ID}:`)));
+}
+
 export function resolveModelForCapability(config: AiConfig, currentModel: string | undefined, capability: ModelCapability) {
     const defaultModel = capability === "image" ? config.imageModel : capability === "video" ? config.videoModel : capability === "audio" ? config.audioModel : config.textModel;
     const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
@@ -199,8 +195,10 @@ export function resolveModelScript(config: AiConfig, value: string) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
-    const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    const resolved = findChannelModel(config, model);
+    if (!resolved) return false;
+    if (isManagedChannel(resolved.channel)) return true;
+    return Boolean(resolved.channel.baseUrl.trim() && resolved.channel.apiKey.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -218,6 +216,7 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            applyPublishedModels: (models) => set((state) => applyManagedModels(state.config, models)),
             importChannelCredentials: (input) => {
                 const currentConfig = get().config;
                 const result = upsertChannelCredentials(currentConfig, input);
@@ -309,13 +308,82 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        ...(channel?.managed ? { managed: true } : {}),
     };
 }
 
-export function upsertChannelCredentials(
-    config: AiConfig,
-    input: { baseUrl?: string | null; apiKey?: string | null },
-): ChannelCredentialsImportResult & { config: AiConfig } {
+function applyManagedModels(config: AiConfig, models: PublishedModel[]) {
+    const groups = new Map<string, { provider: PublishedModel["provider"]; apiFormat: ApiCallFormat; baseUrl: string; models: PublishedModel[] }>();
+    for (const model of models) {
+        if (model.credentialMode !== "managed") continue;
+        const baseUrl = model.baseUrl.replace(/\/+$/, "");
+        const key = `${model.provider}|${model.apiFormat}|${baseUrl}`;
+        const group = groups.get(key);
+        if (group) group.models.push(model);
+        else groups.set(key, { provider: model.provider, apiFormat: model.apiFormat, baseUrl, models: [model] });
+    }
+    const previousManaged = new Map(config.channels.filter(isManagedChannel).flatMap((channel) => channel.models.map((model) => [model.name, model] as const)));
+    const managedChannels = [...groups.values()].map((group) => {
+        const { provider, apiFormat, baseUrl } = group;
+        return createModelChannel({
+            id: managedChannelId(provider, apiFormat, baseUrl),
+            name: managedChannelName(provider, baseUrl),
+            baseUrl,
+            apiKey: MANAGED_PROVIDER_MARKER,
+            apiFormat,
+            managed: true,
+            models: group.models.map((model) => {
+                const previous = previousManaged.get(model.id);
+                return {
+                    name: model.id,
+                    capability: model.capability,
+                    ...(previous?.script ? { script: previous.script } : {}),
+                };
+            }),
+        });
+    });
+    const channels = [...config.channels.filter((channel) => !isManagedChannel(channel)), ...managedChannels];
+    const next = { ...config, channels, models: modelOptionsFromChannels(channels) };
+    return {
+        config: {
+            ...next,
+            model: selectDefaultModel(next, next.model),
+            imageModel: selectManagedDefault(next, next.imageModel, "image"),
+            videoModel: selectManagedDefault(next, next.videoModel, "video"),
+            textModel: selectManagedDefault(next, next.textModel, "text"),
+            audioModel: selectManagedDefault(next, next.audioModel, "audio"),
+        },
+    };
+}
+
+function selectDefaultModel(config: AiConfig, current: string) {
+    if (current && selectableModelsByCapability(config).includes(current) && isAiConfigReady(config, current)) return current;
+    for (const capability of ["image", "text", "video", "audio"] as ModelCapability[]) {
+        const model = selectableModelsByCapability(config, capability).find((value) => isManagedChannel(resolveModelChannel(config, value)));
+        if (model) return model;
+    }
+    return selectableModelsByCapability(config).find((value) => isAiConfigReady(config, value)) || "";
+}
+
+function selectManagedDefault(config: AiConfig, current: string, capability: ModelCapability) {
+    if (current && selectableModelsByCapability(config, capability).includes(current) && isAiConfigReady(config, current) && modelMatchesCapability(config, current, capability)) return current;
+    const options = selectableModelsByCapability(config, capability);
+    return options.find((value) => isManagedChannel(resolveModelChannel(config, value))) || options.find((value) => isAiConfigReady(config, value)) || "";
+}
+
+function managedChannelId(provider: PublishedModel["provider"], apiFormat: ApiCallFormat, baseUrl: string) {
+    return `${MANAGED_CHANNEL_ID}:${provider}:${apiFormat}:${encodeURIComponent(baseUrl)}`;
+}
+
+function managedChannelName(provider: PublishedModel["provider"], baseUrl: string) {
+    try {
+        return `${i18n.t("config.channels.managed")} · ${provider} · ${new URL(baseUrl).host}`;
+    } catch {
+        return `${i18n.t("config.channels.managed")} · ${provider}`;
+    }
+}
+
+export function upsertChannelCredentials(config: AiConfig, input: { baseUrl?: string | null; apiKey?: string | null }): ChannelCredentialsImportResult & { config: AiConfig } {
     const rawBaseUrl = input.baseUrl?.trim() || "";
     if (!rawBaseUrl) return { status: "missing-base-url", config };
     if (!isHttpBaseUrl(rawBaseUrl)) return { status: "invalid-base-url", config };
@@ -421,7 +489,18 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: i18n.t("config.channels.defaultName"), baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return (
+        matched ||
+        config.channels[0] ||
+        createModelChannel({
+            id: "default",
+            name: i18n.t("config.channels.defaultName"),
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            apiFormat: config.apiFormat,
+            models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })),
+        })
+    );
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
@@ -445,7 +524,8 @@ function normalizeChannels(config: AiConfig) {
             models: normalizeChannelModels(channel.models),
         }),
     );
-    if (!channels.length) {
+    const legacyModels = [config.model, config.imageModel, config.videoModel, config.textModel, config.audioModel].map(modelOptionName).filter(Boolean);
+    if (!channels.length && legacyModels.length) {
         channels.push(
             createModelChannel({
                 id: "default",
@@ -453,7 +533,7 @@ function normalizeChannels(config: AiConfig) {
                 baseUrl: config.baseUrl || defaultConfig.baseUrl,
                 apiKey: config.apiKey || "",
                 apiFormat: config.apiFormat || defaultConfig.apiFormat,
-                models: normalizeChannelModels([config.model, config.imageModel, config.videoModel, config.textModel, config.audioModel].map(modelOptionName)),
+                models: normalizeChannelModels(legacyModels),
             }),
         );
     }
@@ -471,13 +551,6 @@ function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
 
 function uniqueModelOptions(models: string[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
-}
-
-export function buildApiUrl(baseUrl: string, path: string) {
-    const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
-    const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
-    const apiBaseUrl = lowerBaseUrl.endsWith("/v1") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return withLocalProxy(`${apiBaseUrl}${path}`);
 }
 
 export function normalizeLocalProxyUrl(value: string) {

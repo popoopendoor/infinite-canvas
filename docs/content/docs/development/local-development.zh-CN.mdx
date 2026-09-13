@@ -5,7 +5,7 @@ description: 前端优先的本地开发方式
 
 # 本地开发
 
-当前主应用以 `web/` 前端为主，AI 请求由浏览器前台直连用户自己的 OpenAI 兼容接口。
+主应用由 `web/` 前端和 `server/` Canvas BFF 组成。纳入 OAuth 与 `money` 计费的模型请求经 BFF 处理；本地 Agent 仍在用户电脑上运行。
 
 ## 1. 启动前端
 
@@ -21,11 +21,25 @@ bun run dev
 http://localhost:3000
 ```
 
-## 2. 配置模型
+## 2. 启动 BFF
 
-打开右上角配置弹窗，填写自己的 `Base URL`、`API Key` 和模型名。第三方提示词和 WebDAV 都由浏览器前端直连。
+另开终端执行：
 
-## 3. 启动文档站
+```bash
+cd server
+npm ci
+npm run dev
+```
+
+Vite 会把 `/auth`、`/api` 和 `/health` 代理到 `http://localhost:3001`。
+
+## 3. 配置模型
+
+在 BFF 启动环境中设置 `MODEL_CATALOG_JSON` 和 `MODEL_PROVIDER_KEYS_JSON`。登录后，映射了服务端 key 的模型会自动进入 `Canvas 托管` 配置，并按目录中的固定价格使用 Flarum `money` 余额。托管模型的接口、协议和模型清单由服务端锁定。
+
+BYOK 仍可保留：把模型发布到目录但不设置对应的服务端 key，再在配置弹窗填写 `Base URL` 和 `API Key`。BYOK key 保存在浏览器，并在请求前加密交给 BFF；所有通过 Canvas 发起的模型请求仍走同一计费链路。
+
+## 4. 启动文档站
 
 如果需要单独调整文档站，在 `docs` 目录执行：
 

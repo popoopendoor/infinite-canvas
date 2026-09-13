@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
+import { UserStatusActions } from "@/components/layout/user-status-actions";
 
 type MobileNavDrawerProps = {
     open: boolean;
@@ -35,6 +36,9 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                         </Link>
                     );
                 })}
+            </div>
+            <div className="mt-6 border-t border-stone-200 pt-4 dark:border-stone-800">
+                <UserStatusActions showConfig={false} />
             </div>
         </Drawer>
     );

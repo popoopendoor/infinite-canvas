@@ -1,0 +1,59 @@
+{
+    "name": "foskym/flarum-oauth-center",
+    "description": "Allow user to authorize the third clients",
+    "keywords": [
+        "flarum",
+        "user",
+        "oauth",
+        "center"
+    ],
+    "type": "flarum-extension",
+    "license": "MIT",
+    "require": {
+        "flarum/core": "^1.8",
+        "bshaffer/oauth2-server-php": "^1.14"
+    },
+    "authors": [
+        {
+            "name": "FoskyM",
+            "email": "i@fosky.top",
+            "role": "Developer",
+            "homepage": "https://fosky.top"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "FoskyM\\OAuthCenter\\": "src/"
+        }
+    },
+    "extra": {
+        "flarum-extension": {
+            "title": "OAuth Center",
+            "category": "",
+            "icon": {
+                "name": "fas fa-user-friends",
+                "color": "#fff",
+                "backgroundColor": "#c12c1f"
+            }
+        },
+        "flarum-cli": {
+            "modules": {
+                "admin": true,
+                "forum": true,
+                "js": true,
+                "jsCommon": true,
+                "css": true,
+                "locale": true,
+                "gitConf": true,
+                "githubActions": true,
+                "prettier": true,
+                "typescript": true,
+                "bundlewatch": false,
+                "backendTesting": true,
+                "editorConfig": true,
+                "styleci": true
+            }
+        }
+    },
+    "prefer-stable": true
+}

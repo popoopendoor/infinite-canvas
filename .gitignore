@@ -11,6 +11,8 @@ data/
 web/dist
 
 **/dist
+!oauth-center/js/dist/
+!oauth-center/js/dist/*.js
 web/public/plugins
 plugins/canvas/*/dist
 plugins/canvas/*/node_modules

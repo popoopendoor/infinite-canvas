@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/oauth-bff-money-bridge.md", "reason": "Cross-layer OAuth, session, billing, provider, and bridge contract for implementation."}
+{"file": ".trellis/tasks/09-06-flarum-oauth-login/design.md", "reason": "Accepted architecture and data-flow decisions for the BFF and bridge."}

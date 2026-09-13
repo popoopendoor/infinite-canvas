@@ -9,6 +9,11 @@ docs/out
 web/.next
 web/node_modules
 web/out
+web/dist
+server/node_modules
+server/dist
+bridge
+oauth-center
 *.log
 .env*
 !.env.example

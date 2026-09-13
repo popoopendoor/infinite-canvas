@@ -3,7 +3,7 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { defaultBaseUrlForApiFormat, guessCapability, isManagedChannel, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
@@ -25,6 +25,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     }, [open, channel]);
 
     if (!draft) return null;
+    const managed = isManagedChannel(draft);
 
     const patch = (value: Partial<ModelChannel>) => setDraft((current) => (current ? { ...current, ...value } : current));
     const setModels = (models: ChannelModel[]) => patch({ models });
@@ -67,19 +68,19 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
             <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.name")}</span>
-                    <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} />
+                    <Input disabled={managed} value={draft.name} onChange={(event) => patch({ name: event.target.value })} />
                 </label>
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.protocol")}</span>
-                    <Select className="w-full" value={draft.apiFormat} options={apiFormatOptions} onChange={changeApiFormat} />
+                    <Select disabled={managed} className="w-full" value={draft.apiFormat} options={apiFormatOptions} onChange={changeApiFormat} />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
-                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
+                    <Input disabled={managed} value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
-                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                    <Input.Password disabled={managed} value={managed ? "" : draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder={managed ? t("config.channelEditor.managedCredential") : "sk-..."} />
                 </label>
             </div>
 
@@ -88,9 +89,11 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <div className="text-sm font-semibold">{t("config.channelEditor.models")}</div>
                     <div className="mt-0.5 text-xs text-stone-500">{t("config.channelEditor.modelDescription", { count: draft.models.length })}</div>
                 </div>
-                <Button type="primary" icon={<ListPlus className="size-4" />} onClick={() => setSelectOpen(true)}>
-                    {t("config.channelEditor.selectModels")}
-                </Button>
+                {!managed ? (
+                    <Button type="primary" icon={<ListPlus className="size-4" />} onClick={() => setSelectOpen(true)}>
+                        {t("config.channelEditor.selectModels")}
+                    </Button>
+                ) : null}
             </div>
 
             <div className="space-y-2 rounded-lg border border-stone-200 p-2 dark:border-stone-800">
@@ -101,11 +104,11 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                                 {model.name}
                             </span>
                             <div className="flex shrink-0 items-center gap-2">
-                                <Segmented size="small" value={model.capability} options={capabilityOptions} onChange={(value) => setCapability(model.name, value as ModelCapability)} />
+                                <Segmented disabled={managed} size="small" value={model.capability} options={capabilityOptions} onChange={(value) => setCapability(model.name, value as ModelCapability)} />
                                 <Button size="small" type={model.script ? "primary" : "default"} ghost={Boolean(model.script)} onClick={() => setScriptTarget({ name: model.name, capability: model.capability, value: model.script || "" })}>
                                     {t(model.script ? "config.channelEditor.scriptReady" : "config.channelEditor.script")}
                                 </Button>
-                                <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} onClick={() => removeModel(model.name)} />
+                                {!managed ? <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} onClick={() => removeModel(model.name)} /> : null}
                             </div>
                         </div>
                     ))

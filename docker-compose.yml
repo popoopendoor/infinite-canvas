@@ -1,11 +1,52 @@
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: ${CANVAS_APP_IMAGE:-infinite-canvas:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: infinite-canvas
     ports:
       - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      bff:
+        condition: service_healthy
     # 统计分析（可选，默认关闭）。每家一个独立变量，填了谁就启用谁，可同时启用多家：
     # environment:
     #   ANALYTICS_GA4_ID: G-XXXXXXXXXX                    # Google Analytics 4 衡量 ID
     #   ANALYTICS_BAIDU_ID: xxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 百度统计站点 ID
+
+  bff:
+    image: ${CANVAS_BFF_IMAGE:-infinite-canvas-bff:latest}
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN is required}
+      DATABASE_PATH: /var/lib/canvas-bff/canvas.sqlite
+      FLARUM_BASE_URL: ${FLARUM_BASE_URL:?FLARUM_BASE_URL is required}
+      FLARUM_INTERNAL_BASE_URL: ${FLARUM_INTERNAL_BASE_URL:-}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:?OAUTH_CLIENT_ID is required}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:?OAUTH_CLIENT_SECRET is required}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:?OAUTH_REDIRECT_URI is required}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-60000}
+      BRIDGE_URL: ${BRIDGE_URL:?BRIDGE_URL is required}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?BRIDGE_TOKEN is required}
+      MODEL_CATALOG_JSON: ${MODEL_CATALOG_JSON:?MODEL_CATALOG_JSON is required}
+      MODEL_PROVIDER_KEYS_JSON: ${MODEL_PROVIDER_KEYS_JSON:-{}}
+      PROVIDER_BASE_URL_ALLOWLIST: ${PROVIDER_BASE_URL_ALLOWLIST:?PROVIDER_BASE_URL_ALLOWLIST is required}
+    volumes:
+      - canvas-bff-data:/var/lib/canvas-bff
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  canvas-bff-data:

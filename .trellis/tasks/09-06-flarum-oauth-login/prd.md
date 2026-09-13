@@ -1,21 +1,28 @@
-# Canvas 接入 Flarum OAuth 登录
+# Canvas 接入 Flarum OAuth 登录与受控模型计费
 
 ## 1. 状态与目标
 
 - Trellis 任务：`flarum-oauth-login`。
+- 正式交付仓库：`https://github.com/popoopendoor/infinite-canvas.git`。
+- 本地仓库目录：`canvas/infinite-canvas`。
+- 旧地址 `https://github.com/basketikun/infinite-canvas` 仅作为历史/上游参考，不作为本任务的交付仓库。
 - 开发分支：`flarum-outh`，保留现有命名。
-- 当前阶段：规划，尚未批准实现。
+- 当前阶段：Goal 模式执行中；实现必须持续对照本文验收标准推进。
 - 访问策略已确认采用 B：现有 Canvas 应用功能登录后才能使用。
-- 本文面向后续 Goal 持续执行，定义交付边界、验收证据和停止条件；本文自身不激活 Goal。
+- 本文是 Goal 模式的执行依据，定义交付边界、验收证据和停止条件；Goal 的生命周期由当前执行会话管理。
 
 目标：用户使用目标 Flarum 论坛账户登录 Canvas，完成授权、网站会话建立、登录状态恢复和退出，并使用 Flarum 的 `money` 积分消费 Canvas 提供的模型能力。登录后才能访问现有 Canvas 应用页面；登录流程和认证错误页面保持可访问。登录功能必须保护 OAuth 客户端密钥和令牌，积分消费必须由受信任的服务端判定和执行，同时保持现有画布与本地工具能力的兼容性。
 
 登录不自动意味着云同步、账户数据隔离、论坛权限同步或跨站单点退出。
 
-## 2. 已确认的系统现状
+已确认的后端边界：Canvas BFF 源码放在本仓库的 `server/`，实现为独立 Node.js/TypeScript 服务，并通过 Docker 与前端部署；不将 BFF 实现为 Flarum 插件。Flarum 侧只安装独立的 PHP/Composer wallet bridge，用于受控的 `money` 余额和扣费能力。这样可以保持 OAuth 会话、模型目录、provider 编排与 Flarum 钱包实现的边界，避免 BFF 直接耦合 Flarum 生命周期或数据库。
 
-- 网站位于 `web`，使用 Vite、React、TypeScript、React Router、Ant Design、Tailwind CSS、Zustand 和 TanStack React Query。
-- 根目录 `Dockerfile` 构建静态前端，Nginx 提供 SPA fallback；没有网站认证服务。
+## 2. 实施前基线（记录）
+
+以下内容记录任务启动时的代码与外部依赖基线，不代表当前实现状态；当前进度以 `implement.md` 和验收证据为准。
+
+- 正式仓库根目录为 `infinite-canvas`，前端位于 `web`，使用 Vite、React、TypeScript、React Router、Ant Design、Tailwind CSS、Zustand 和 TanStack React Query。
+- 当前根目录 `Dockerfile` 只构建静态前端，Nginx 提供 SPA fallback；没有网站认证服务，也不存在 `server/` BFF 实现。
 - `web/src/stores/use-user-store.ts` 目前只有用户类型、空用户状态与 `clearSession`。
 - 当前路由没有认证守卫，导航没有完整的登录和退出操作。
 - 当前业务路由包括 `/`、`/image`、`/video`、`/assets`、`/prompts`、`/canvas`、`/canvas/:id` 和 `/config`。
@@ -52,13 +59,15 @@
 
 ### R2. 受信任的认证边界
 
-- 已确认采用独立 Node.js/TypeScript Canvas 服务端 BFF，承担 OAuth 授权入口、回调、会话查询、退出、模型目录、价格、受保护的模型调用和计费编排；从现有 bridge fork 的 Flarum 扩展只承担受控的钱包余额/扣费能力及必要的 Flarum 侧接口。
-- 该后端边界已确认，但实现尚未批准。完整 Canvas 按 Docker 方式部署；具体 Docker Compose/编排、数据库和会话存储产品仍需在 `design.md` 中确定。fork 后的 bridge 作为独立 PHP/Composer Flarum 扩展安装到 Flarum，不进入 Canvas 镜像或前端构建；BFF 通过受认证的服务间接口访问 bridge，不直连 Flarum 数据库。
+- BFF 源码位于当前仓库的 `server/`，实现为独立 Node.js/TypeScript 服务，承担 OAuth 授权入口、回调、会话查询、退出、模型目录、价格、受保护的模型调用和计费编排；不实现为 Flarum 插件。
+- 目标部署使用 Docker：前端静态资源由 Nginx 提供，Nginx 将同源认证、余额和受保护模型请求转发到独立的 BFF 服务。BFF 与 Nginx 可以由同一 Docker Compose 编排，但保持独立进程和服务边界。具体 Dockerfile 拆分、Compose 编排、数据库和会话存储产品在 `design.md` 中确定。
+- fork 后的 bridge 作为独立 PHP/Composer Flarum 扩展安装到 Flarum，不进入 Canvas 镜像、`web` 前端构建或 `server/` BFF；BFF 通过受认证的服务间接口访问 bridge，不直连 Flarum 数据库。
 - 目标环境已安装的 `yuyuko233/vfxskill-ai-bridge` 仅作为 fork 参考基础，不直接复用其部署版本；fork 后必须重新定义并验证 OAuth 会话、钱包、模型和服务间认证边界。其共享服务令牌不得下发浏览器，也不能替代 Canvas OAuth 会话校验。
 - 新插件必须使用独立的 Composer 包名、Flarum 扩展 ID、PHP namespace、路由前缀、配置键、迁移和账本表命名，不能覆盖旧 bridge 的资产、数据或 `/aiart` 路由；命名隔离不能替代对共享 `users.money` 写入方的并发协调。
 
 - `client_secret` 只在服务端使用。
 - Flarum access/refresh token 不返回浏览器，不存入前端配置、URL、localStorage、IndexedDB 或持久化 Zustand。
+- 自定义模型脚本使用的短期 capability 只通过 `X-Canvas-Capability` 请求头传递，不放入 URL 路径、查询参数、浏览器历史或可记录的重定向地址。
 - OAuth 回调由服务端接收，完成后跳转到不含授权码的干净页面。
 - 不以隐式授权或未经验证的公开客户端 PKCE 作为降级方案。
 - 采用成熟的 OAuth、会话及参数验证库；具体选型在 `design.md` 确定。
@@ -67,7 +76,9 @@
 
 - 网站会话与 Flarum OAuth token 明确区分。
 - 页面刷新后由服务端重新确认身份，不能把本地 user 对象视为认证凭据。
-- 网站会话采用服务端持久化存储；空闲有效期为 7 天，绝对有效期为 30 天。空闲超期或绝对超期后视为未登录并要求重新授权，具体存储产品在 `design.md` 中确定。
+- 网站会话采用服务端持久化存储；空闲有效期为 3 天，绝对有效期为 30 天。空闲超期或绝对超期后视为未登录并要求重新授权，具体存储产品在 `design.md` 中确定。
+- 空闲时间以服务端最后一次成功的认证 BFF 请求为准；画布内单纯鼠标移动、键盘编辑等不产生 BFF 请求的活动不会续期。有效请求续期必须受服务端会话策略控制，不能由浏览器提交时间戳或续期结果。
+- 因此，用户登录后画布的服务端空闲有效期确定为 3 天；画布本地编辑不会单独延长登录状态，绝对有效期始终为 30 天。
 - 退出使当前网站会话在服务端立即失效，重放旧会话凭据不能恢复认证；BFF 重启后保留未过期会话。
 - 不承诺退出 Canvas 会同步退出 Flarum。
 - 不默认要求保存刷新令牌。是否在获取身份后丢弃令牌、定期重新授权或刷新，须在设计中说明。
@@ -88,14 +99,16 @@
 - 需要消费积分的模型调用必须经过 Canvas BFF 的服务端计费编排，或由 BFF 发放、校验并记录的一次性/短期计费授权后再经受控适配器调用 provider。BYOK、本地 Agent 和自定义插件入口不因本任务禁用，但其在 Canvas 内发起的模型请求必须接入同一计费授权与结果回传契约；未接入契约的直连请求不能视为已完成积分控制。
 - 余额展示以服务端查询为准，余额不足、会话失效、钱包服务故障和模型服务故障分别呈现；余额查询失败不得被当作余额为零或匿名状态。
 - 用户明确不因本任务禁用 BYOK、本地 Agent 和自定义插件入口；通过 Canvas 发起的文本、图片生成/编辑、音频、视频、画布 Agent 和自定义模型插件等模型使用均纳入 Flarum `money` 计费。价格采用服务端固定价格版本，按“模型 + 能力 + 规范化请求参数”匹配，并在报价或计费授权时锁定 `price_version`；不按实际 token、时长或上游成本动态结算。计费金额以积分整数表示，约定 `1 money = 1 积分`；价格、余额判定、预扣、capture 和 release/refund 金额均必须是有限的非负整数，不做四舍五入或截断，余额最低为 `0`，余额不足时拒绝预扣。暂不设置未经确认的统一数值价格上限；每个可收费请求必须使用服务端价格目录中经发布审核的显式价格，禁止缺省价格和浏览器自定义价格。非模型本地工具继续保留，Canvas 外自行运行的 provider、Agent 或插件不属于本系统可控制范围。
+- 登录成功后，如果服务端目录发布了至少一个托管模型，前端自动建立可用的 `Canvas managed` 配置并为缺少有效本地配置的能力选择默认模型。托管模型按公开 provider 协议和 endpoint 分组；服务端 endpoint 仅用于路由，provider key 永不返回浏览器。托管配置的 endpoint、协议、能力和模型清单不可编辑或删除，但保留自定义脚本入口；托管请求仍必须经过 BFF 的 hold/provider/capture/release 计费链路。
 - 原始 `antoinefr/flarum-ext-money` 没有专用消费、冻结、退款、持久交易或幂等接口；`money` 余额为 `users.money` 浮点字段，写入通常是对象加减后 `save()`，不能直接作为 Canvas 的安全扣费协议。
-- 已按确认的后端边界，将以目标环境现有 `yuyuko233/vfxskill-ai-bridge` 源码为参考 fork 独立 Flarum bridge，并纳入必要的并发兼容调整；fork 后只提供受控钱包桥接能力，Canvas BFF 管理模型目录、价格、provider 和模型请求状态，不直接继承已安装版本的 `/aiart` 或模型行为。当前 fork 尚未创建。
+- 已按确认的后端边界，将以目标环境现有 `yuyuko233/vfxskill-ai-bridge` 源码为参考 fork 独立 Flarum bridge，并纳入必要的并发兼容调整；fork 后只提供受控钱包桥接能力，Canvas BFF 管理模型目录、价格、provider 和模型请求状态，不直接继承已安装版本的 `/aiart` 或模型行为。独立 bridge 源码已位于本仓库 `bridge/`，已在本机测试 Flarum 完成 path 安装、启用、migration 和并发 hold 验证；生产部署仍待验收。
 - `edit_money` 只表示修改用户余额的 Flarum 权限。不能把它授予普通 OAuth 用户，也不能让 Canvas BFF 使用通用用户更新接口覆盖余额；桥接必须从已验证的 OAuth 网站会话派生付款用户。
 - 参考 bridge 源码的 `UserMoneyBalanceGateway` 将余额四舍五入为整数后再写回；目标计费契约改为 `1 money = 1` 积分，所有价格和余额变更必须为有限非负整数，不得四舍五入或截断；现有 `users.money` 浮点字段的约束、历史小数余额处理和迁移/拒绝策略必须在设计与部署前明确。hold/capture/生成失败处理和用户级锁的覆盖范围仍有缺口，不能把参考实现的测试通过等同于新插件的全论坛并发安全。
 - 参考 bridge 源码还需在 fork 后补强：hold 重放校验不仅要比较 generation ID 和用户，还要绑定报价及规范化请求；capture 重放要拒绝金额或参数冲突；钱包操作需要有服务端请求级幂等；余额操作、账本和 BFF 模型任务之间要有可恢复状态。
 - 参考 bridge 生成失败时会尝试 release hold，但超时、存储失败或浏览器断开可能已经产生上游费用；这些结果不能在未经策略确认时统一当作可退款失败。
 - 每次模型消费都要有服务端幂等记录，关联网站用户、规范化请求、价格版本、钱包交易标识、模型任务和最终状态；重复请求不能重复扣费或重复创建任务。
 - 已确认计费生命周期：每个模型计费单元先进行预扣/冻结；模型明确成功后 capture；模型明确失败后 release/refund；超时、断流、取消、浏览器关闭或 provider 返回结果未知时，保持待对账状态，不自动重试、不自动退款。异步任务和批量请求按可独立确认的计费单元记录，成功单元 capture、明确失败单元 release/refund、未知单元进入对账；provider 状态映射、对账责任和补偿操作在 `design.md` 中明确。
+- 批量请求采用 `POST /api/model-task-batches`，每批 1-20 个子请求；每个子请求必须使用独立幂等键并独立产生模型任务、钱包账本和对账记录。接口返回聚合状态及全部子任务，聚合状态不合并扣费，也不掩盖部分成功、部分失败或部分待对账。
 
 ### R6. 访问控制
 
@@ -134,7 +147,7 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 - 为 BFF 的授权入口、callback、`state` 状态转换、会话查询、退出和错误路径补充可重复的自动化测试或验证步骤。
 - 文档说明 Flarum 客户端创建、最小权限、回调地址、环境变量、本地启动、生产连接方式、全站登录要求和安全边界。
 - 记录真实 Flarum 联调与现有匿名访问行为变化；敏感值全部脱敏。
-- 会话生命周期测试应覆盖 7 天空闲期限、30 天绝对期限、BFF 重启后的会话恢复和退出后的旧凭据失效；应使用可控时钟或时间注入，不能依赖实际等待 7 天或 30 天。
+- 会话生命周期测试应覆盖 3 天空闲期限、30 天绝对期限、BFF 重启后的会话恢复和退出后的旧凭据失效；应使用可控时钟或时间注入，不能依赖实际等待 3 天或 30 天。
 - 文档还需说明 `antoinefr/flarum-ext-money` `1.4.1`、fork 后 Flarum bridge 的安装与升级、fork 仓库归属和许可证、服务间认证、模型目录/价格发布、计费对账和失败补偿边界。
 
 ## 4. 安全要求
@@ -159,7 +172,8 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 
 ## 5. 部署要求
 
-已确认完整 `infinite-canvas` 以 Docker 方式部署：前端与独立 Node.js/TypeScript Canvas BFF 运行在 Canvas 的 Docker 部署中，通过 Nginx 提供同源 `/auth/*`、余额查询和受保护模型调用入口；fork 后的 bridge 作为独立 PHP/Composer Flarum 扩展安装到 Flarum，不进入 Canvas 镜像或前端构建。BFF 通过受认证的服务间接口调用 bridge，bridge 通过 Flarum 数据层执行事务及原子余额操作，不允许 BFF 直连论坛数据库。
+已确认完整 `infinite-canvas` 以 Docker 方式部署：`web` 前端由 Nginx 提供静态资源和 SPA fallback，`server/` 中的独立 Node.js/TypeScript Canvas BFF 作为单独服务运行，Nginx 提供同源 `/auth/*`、余额查询和受保护模型调用入口；fork 后的 bridge 作为独立 PHP/Composer Flarum 扩展安装到 Flarum，不进入 Canvas 镜像、前端构建或 BFF 服务。BFF 通过受认证的服务间接口调用 bridge，bridge 通过 Flarum 数据层执行事务及原子余额操作，不允许 BFF 直连论坛数据库。
+
 - Docker Compose 或其他容器编排方式、容器数量、数据库类型、会话存储产品和持久卷布局仍在 `design.md` 中确定；本确认不预设单容器或具体基础设施产品。
 - 本地通过 Vite 代理，生产通过网关或 Nginx 实现一致路径。
 - 服务端密钥独立于 `VITE_*` 与公开 `config.js`，也不得写入 Docker 镜像层、前端静态资源或构建日志。
@@ -168,9 +182,9 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 - 已观测目标测试环境为 Flarum Core `1.8.16`、`antoinefr/flarum-ext-money 1.4.1`、`foskym-oauth-center v1.3.0`；仍需验证生产/部署环境是否一致、论坛基础路径、`user.read` 配置及 bridge 服务接口兼容性。
 - Canvas 浏览器只访问同源 BFF；BFF 到 Flarum 的请求为服务端通信，不以浏览器 CORS 为前提。配置缺失或 bridge 不可达时，BFF 必须拒绝依赖钱包的消费请求并返回明确错误；余额展示应报告钱包服务不可用，不能因此否定有效网站会话、退出或不依赖钱包的功能。
 - 纯 GitHub Pages 等静态托管不能单独承载本方案的保密客户端和 BFF；必须部署 Docker 服务或调整托管架构。
-- 会话存储、持久卷、密钥轮换、健康检查和回滚步骤在 `design.md` 明确。
+- BFF 的会话空闲期限固定为 3 天、绝对期限固定为 30 天；会话存储、持久卷、密钥轮换、健康检查和回滚步骤在 `design.md` 明确。
 - BFF 的服务端配置必须分别保护 OAuth `client_secret`、Flarum 钱包/桥接访问凭据、模型 provider 凭据和会话存储；这些配置不能通过 `VITE_*` 或公开 `config.js` 下发。
-- 设计必须明确模型目录与固定价格版本的来源、发布、回滚和审计方式，预扣/capture/release/refund 与结果未知状态的持久化记录、服务重启后的任务恢复/对账，以及钱包接口不可用时的拒绝和恢复策略。
+- BFF 必须将经校验和规范化的模型目录持久化为不可变发布记录，并记录激活、切换与恢复历史目录的审计事件；同一模型改价必须使用新的 `priceVersion`。设计还必须明确预扣/capture/release/refund 与结果未知状态的持久化记录、服务重启后的任务恢复/对账，以及钱包接口不可用时的拒绝和恢复策略。
 - BYOK、本地 Agent 和自定义插件模型入口不因本任务删除或禁用；通过 Canvas 发起的模型使用均属于 Flarum `money` 计费范围，必须设计 BFF 计费授权、用户密钥处理、受控适配器和最终结果回传，不能因为使用用户自有 key 或本地执行就绕过积分记录。
 
 这些是待准备或验证的前提，不表示已经具备。
@@ -191,7 +205,7 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 - AC2：业务路由直接访问、刷新、浏览器前进后退及外部链接进入均遵循全站登录策略；认证相关入口仍可用于重新登录和处理错误。
 - AC3：授权拒绝、缺参、过期/重放/跨浏览器 `state` 均不建立会话，也不会把用户困在重定向循环中。
 - AC4：HTTP 200 携带 OAuth error、无效用户 JSON、超时等上游错误均安全失败。
-- AC5：登录后刷新页面能恢复未过期的网站会话；使用可控时钟验证 7 天空闲期限和 30 天绝对期限；BFF 重启后未过期会话仍有效；退出后会话立即失效，重放旧会话凭据失败；会话过期与重启行为符合上述规则。
+- AC5：登录后刷新页面能恢复未过期的网站会话；使用可控时钟验证 3 天空闲期限和 30 天绝对期限，且仅服务端成功认证请求能续期；BFF 重启后未过期会话仍有效；退出后会话立即失效，重放旧会话凭据失败；会话过期与重启行为符合上述规则。
 - AC6：外部返回地址、退出 CSRF、会话固定和缓存泄漏测试通过。
 - AC7：浏览器网络、存储、构建产物及脱敏日志没有客户端密钥或 Flarum token。
 - AC8：已登录状态下画布与全站导航均可登录退出，中英文和窄屏无布局回归；未登录时业务内容不会闪现。
@@ -209,7 +223,9 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 - AC20：部署、模型目录与固定价格版本、钱包接口、预扣/capture/release/refund 计费记录、结果未知对账、补偿策略、密钥管理、故障处理和回滚文档完整。
 - AC21：Docker 部署可从干净环境启动完整 Canvas，Nginx 将同源认证、余额和模型请求正确转发到 BFF；容器重建或滚动更新后，计费记录按设计可恢复或进入对账。
 - AC22：fork 后 Flarum bridge 以独立 Composer/Flarum 插件安装，包名、扩展 ID、namespace、路由、配置和迁移命名与旧 bridge 无冲突；安装新插件不覆盖旧 bridge 的数据、资产或 `/aiart`，且 BFF 不直连论坛数据库。
-- AC23：明确成功的计费单元只 capture 一次，明确失败的计费单元只 release/refund 一次；超时、断流、取消、浏览器关闭或 provider 结果未知的单元保持待对账，不自动重试或退款；异步和批量请求的部分成功、失败和未知单元可分别对账。
+- AC23：明确成功的计费单元只 capture 一次，明确失败的计费单元只 release/refund 一次；超时、断流、取消、浏览器关闭或 provider 结果未知的单元保持待对账，不自动重试或退款；`POST /api/model-task-batches` 中每个子请求独立计费并返回独立状态，批量请求的部分成功、失败和未知单元可分别对账。
+- AC24：BFF 源码位于本仓库 `server/`，以独立 Node.js/TypeScript 服务运行并可通过 Docker 部署；BFF 不作为 Flarum 插件安装，Flarum 侧仅安装独立 bridge，二者通过受认证的服务间接口通信。
+- AC25：登录成功后，已发布且配置了服务端 provider key 的模型自动出现在 `Canvas managed` 配置中，并按 provider 协议与 endpoint 正确分组；缺少有效本地配置时各能力自动选择托管模型。托管请求不携带浏览器 provider key，仍创建 money hold 并在明确成功后 capture；生产 BFF 没有至少一个托管模型时启动失败。托管 endpoint、协议、能力和模型清单不可由前端改写或删除。
 
 安全边界必须有自动化测试；截图和人工测试不能替代 `state`、会话撤销、原子扣费、幂等和绕过模型入口等验证。现有测试故障需记录基线，不得归为本功能通过。
 
@@ -235,8 +251,24 @@ React 路由守卫只是界面控制。若目标是会员专属网站，需要�
 - 不索取用户在聊天中粘贴 `client_secret`；使用本机私有环境配置。
 - 外部阻塞据实报告，不伪造用户授权、凭据或测试结果，不为通过验收关闭安全检查。
 
-## 10. 待确认事项
+## 10. 决策记录与待确认事项
 
-1. 真实 OAuth 联调和 Docker 部署所需的论坛基础 URL、Canvas 域名、TLS/DNS、BFF 到 Flarum bridge 的网络可达性、OAuth 客户端和精确回调地址是否已准备？测试环境版本已确认，但 SSH 可达不等于浏览器回调和生产连接已经配置完成。
+已确认：
 
-按优先级逐项收敛；推荐方案必须标为建议。所有影响产品行为或验收的事项解决后，提交最终方案供用户明确批准，再开始实现。
+- 本任务以 `https://github.com/popoopendoor/infinite-canvas.git` 为唯一正式交付仓库，分支使用 `flarum-outh`。
+- 任务范围包含 OAuth 登录、Node.js/TypeScript BFF、独立 Flarum bridge、模型目录、固定价格版本和 `money` 计费，不拆出单独的登录子任务。
+- BFF 源码放在当前仓库 `server/`，采用独立服务并通过 Docker 部署；不将 BFF 做成 Flarum 插件。Flarum 插件只承担钱包 bridge 能力。
+- 现有 Canvas 业务路由登录后才能使用；登录、退出和账户切换不做账户级本地数据隔离，不删除或迁移现有共享本地数据。
+- BYOK、本地 Agent 和自定义插件继续保留，但通过 Canvas 发起的模型请求必须进入统一的 BFF 计费授权/受控适配契约；Canvas 外部自行运行的 provider、Agent 或插件不属于本系统控制范围。
+- 网站会话空闲期限为 3 天，绝对期限为 30 天；空闲按服务端最后一次成功认证 BFF 请求计算。
+
+以下事项是实现、部署和真实联调时必须验证或补齐的执行项，不再改变已确认的产品范围与架构边界：
+
+1. 真实 OAuth 联调和 Docker 部署所需的论坛基础 URL、Canvas 域名、TLS/DNS、BFF 到 Flarum bridge 的网络可达性、OAuth 客户端和精确回调地址。测试环境版本已确认，但 SSH 可达不等于浏览器回调和生产连接已经配置完成。
+2. BFF 的数据库、服务端会话存储、持久卷、备份、健康检查、扩缩容和滚动更新方案；必须保证 BFF 重启后会话和计费状态按约定恢复或进入对账。
+3. OAuth Center 对 PKCE、授权码错误状态码、`user.read` 字段和回调路径的实际兼容性；不能把 `state` 或 BFF 会话当作 PKCE 替代品。
+4. fork 后 bridge 的独立仓库归属、Composer 包名、扩展 ID、许可证、发布方式、服务间认证和部署权限；不得复制目标环境 dirty 工作树或覆盖旧 bridge。
+5. `users.money` 浮点字段的历史小数余额处理、共享写入方并发协调、原子 hold/capture/release/refund 能力，以及结果未知时的对账和补偿责任。
+6. 模型目录、固定价格版本的发布/回滚/审计流程，模型 provider 适配范围，以及文本、图片、音频、视频、画布 Agent 和插件入口各自的成功、失败、超时、取消和部分成功映射。
+
+以上事项属于实现、部署和真实联调阶段的验证项，不再改变已确认的产品范围与架构边界。当前已根据用户确认进入 Goal 执行；只有发现会改变验收标准或架构边界的阻塞时，才回到需求确认。

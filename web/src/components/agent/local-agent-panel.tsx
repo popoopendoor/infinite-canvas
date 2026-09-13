@@ -134,9 +134,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     // canvasContext is intentionally excluded because project updates it every frame during dragging and resizing.
     // The panel uses it only for ref synchronization and debounced postState calls, never during rendering.
     // Subscribing here would rerender the panel every frame and amplify the #185 crash, so it is observed imperatively below.
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals } = useAgentStore(
+    const { url, token, connected, enabled, prompt, attachments, sending, waiting, tokenUsage, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, permissionMode, models, model, reasoningEffort, activity, conversation, connectError, pendingTool, pendingApprovals } = useAgentStore(
         useShallow((state) => ({
-            width: state.width,
             url: state.url,
             token: state.token,
             connected: state.connected,
@@ -1556,10 +1555,6 @@ async function createMessageAttachmentMetadata(item: AgentAttachment) {
         ? await upscaleDataUrl(item.dataUrl, { targetLongEdge: MESSAGE_PREVIEW_LONG_EDGE, algorithm: "high" })
         : item.dataUrl;
     return { id: item.id, name: item.name, type: item.type, size: item.size, width: item.width, height: item.height, url };
-}
-
-function clamp(value: number, min: number, max: number) {
-    return Math.min(max, Math.max(min, value));
 }
 
 async function importGeneratedImages(endpoint: string, token: string, item: AgentEventItem) {

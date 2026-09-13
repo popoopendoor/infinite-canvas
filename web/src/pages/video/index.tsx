@@ -64,7 +64,6 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vqu
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
-const LOG_STORE_KEY = "infinite-canvas:video_generation_logs";
 const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 
 export default function VideoPage() {
@@ -73,7 +72,6 @@ export default function VideoPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dragDepthRef = useRef(0);
     const activeLogIdsRef = useRef<Set<string>>(new Set());
-    const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
@@ -186,7 +184,7 @@ export default function VideoPage() {
             const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references);
             const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, durationMs: 0, status: "pending", task });
             await saveLog(log, false);
-            void pollGenerationLog(log, snapshot.config, agentTaskId);
+            void pollGenerationLog(log, agentTaskId);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : t("workbench.generationFailed");
             setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);
@@ -306,16 +304,15 @@ export default function VideoPage() {
         }
     };
 
-    const pollGenerationLog = async (log: GenerationLog, configOverride?: AiConfig, agentTaskId?: string) => {
+    const pollGenerationLog = async (log: GenerationLog, agentTaskId?: string) => {
         if (!log.task || activeLogIdsRef.current.has(log.id)) return;
         activeLogIdsRef.current.add(log.id);
         setRunning(true);
         setStartedAt((value) => value || performance.now());
         setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
-        const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
         try {
             for (let attempt = 0; attempt < 120; attempt += 1) {
-                const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
+                const state = await pollVideoGenerationTask(log.task);
                 if (state.status === "completed") {
                     const stored = await storeGeneratedVideo(state.result);
                     const nextVideo: GeneratedVideo = {

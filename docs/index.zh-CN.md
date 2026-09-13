@@ -37,7 +37,7 @@
 ## 说明
 
 - 当前画布项目和“我的素材”主要保存在浏览器本地，跨设备可自行配置 WebDAV 同步。
-- AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。
+- 本地 BYOK API Key 保存在浏览器，并以一次性加密封装交给 Canvas BFF；OAuth、bridge token 和 provider 服务端凭据不会下发到浏览器。
 
 ## 原理说明
 

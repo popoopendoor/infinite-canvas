@@ -7,12 +7,14 @@ description: 使用 Docker Compose 部署无限画布
 
 如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
 
-## 使用发布镜像
+## 启动完整服务
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:popoopendoor/infinite-canvas.git
 cd infinite-canvas
-docker compose up -d
+cp .env.example .env
+# 编辑 .env，填写 Flarum OAuth、bridge、模型目录和 provider allowlist。
+docker compose up -d --build
 ```
 
 启动后访问：
@@ -21,6 +23,8 @@ docker compose up -d
 http://localhost:3000
 ```
 
+生产 Compose 会启动 Nginx 前端和独立的 Node.js BFF。Flarum Money Bridge 需要单独安装在 Flarum 站点中，不会打进 Canvas 镜像。`OAUTH_REDIRECT_URI` 必须与 Flarum 中登记的回调地址完全一致。
+
 ## 本地构建镜像
 
 如果需要基于当前源码构建镜像：
@@ -28,6 +32,8 @@ http://localhost:3000
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
+
+本地 Compose 允许 OAuth 和 bridge 配置为空，适合先做界面和健康检查；真实 OAuth 与计费模型请求仍需在 `.env` 中填写对应配置。
 
 ## 文档站镜像
 
@@ -49,7 +55,7 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 数据说明
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。
+画布、我的素材、生成记录和本地 provider 配置默认仍保存在浏览器。BFF 会把网站会话、任务状态和待对账数据保存到 `canvas-bff-data` 卷。不要暴露该卷，也不要泄露 OAuth、bridge 和 provider 凭据。
 
 ## 统计分析（可选）
 
@@ -67,7 +73,7 @@ docker compose -f docker-compose.local.yml up -d --build
 ```yaml
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: infinite-canvas:latest
     ports:
       - "3000:3000"
     environment:
@@ -81,7 +87,7 @@ services:
 docker run -d -p 3000:3000 \
   -e ANALYTICS_GA4_ID=G-XXXXXXXXXX \
   -e ANALYTICS_BAIDU_ID=e8263761cc5c32f5f7a855b8203b965a \
-  ghcr.io/basketikun/infinite-canvas:latest
+  infinite-canvas:latest
 ```
 
 单页应用的路由切换会自动向所有已启用的统计上报 pageview。

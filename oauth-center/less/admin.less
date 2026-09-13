@@ -1,0 +1,105 @@
+.OAuthCenter {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+
+  .hidden {
+    display: none;
+  }
+
+  .pull-right {
+    float: right;
+  }
+
+  .oauth-menu {
+    background: @control-bg;
+    margin-bottom: 15px;
+
+
+    .Button {
+      padding: 12px 13px;
+      border-radius: 0;
+
+      &.item-selected {
+        background: darken(@control-bg, 10%);
+      }
+    }
+  }
+
+  .OAuthCenterPage-container {
+    max-width: 100% !important;
+  }
+
+  .OAuthCenter-clientsPage, .OAuthCenter-scopesPage {
+    table {
+      width: 100%;
+
+      td, th {
+        padding: 3px 5px;
+      }
+
+      th {
+        text-align: left;
+      }
+    }
+
+    .Checkbox {
+      padding: 0 10px;
+    }
+
+    .FormControl {
+      background: @body-bg;
+      border-color: @control-bg;
+
+      // We set the same as Flarum default, but with more specificity
+      &:focus,
+      &.focus {
+        border-color: @primary-color;
+      }
+    }
+  }
+}
+.OAuthCenter-Checkbox {
+  .Checkbox-display {
+    font-size: 22px;
+  }
+}
+.OAuthCenter-Columns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+
+  .OAuthCenter-Column {
+    flex: 1;
+    margin-right: 25px;
+    margin-bottom: 20px;
+
+    &:last-child {
+      margin-right: 0;
+    }
+  }
+}
+@media (max-width: 992px) {
+  .OAuthCenter-Columns {
+    display: block;
+    .OAuthCenter-Column {
+      margin-right: 0;
+    }
+  }
+}
+.OAuthCenter-FormGroup-Column {
+  width: 48%;
+  display: inline-block;
+  vertical-align: text-top;
+  &:last-child {
+    text-align: center;
+  }
+}
+
+@media (min-width: 992px) {
+  .OAuthCenter {
+    .OAuthCenterPage-container {
+      max-width: 600px;
+      margin: 0;
+    }
+  }
+}

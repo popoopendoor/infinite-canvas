@@ -39,9 +39,7 @@ export type AgentConversationState = {
 };
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
 
-const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
-let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
 type AgentStore = {
     width: number;
@@ -163,8 +161,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     disconnectAgent: (patch = {}) => {
         agentSource?.close();
         agentSource = null;
-        if (connectTimer) clearTimeout(connectTimer);
-        connectTimer = null;
         set({ enabled: false, connected: false, silentConnect: false, fragmentBootstrap: false, activity: i18n.t("agent.state.offline"), conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} }, bootstrapStatus: null, mcpStartupStatuses: {}, ...patch });
     },
     addMessage: (item) => set((state) => ({ messages: [...state.messages, item] })),

@@ -14,7 +14,19 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    createModelChannel,
+    isManagedChannel,
+    modelOptionsFromChannels,
+    normalizeModelOptionValue,
+    selectableModelsByCapability,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ConfigTabKey,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -74,7 +86,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const finishConfig = () => {
-        const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
+        const ready = config.channels.some((channel) => channel.models.length && (isManagedChannel(channel) || (channel.baseUrl.trim() && channel.apiKey.trim())));
         setConfigDialogOpen(false);
         if (!ready) return;
         message.success(t(shouldPromptContinue ? "config.savedContinue" : "config.saved"));
@@ -101,6 +113,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const deleteChannel = (id: string) => {
+        if (isManagedChannel(config.channels.find((channel) => channel.id === id))) return;
         if (config.channels.length <= 1) {
             message.warning(t("config.channels.keepOne"));
             return;
@@ -109,7 +122,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const saveChannel = (channel: ModelChannel) => {
-        updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
+        updateChannels(
+            config.channels.map((item) => {
+                if (item.id !== channel.id) return item;
+                return isManagedChannel(item) ? { ...item, models: channel.models } : channel;
+            }),
+        );
     };
 
     const testWebdav = async () => {
@@ -197,14 +215,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <div className="min-w-0">
                                                 <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
                                                 <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                    {isManagedChannel(channel) ? t("config.channels.managed") : apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} ·{" "}
+                                                    {isManagedChannel(channel) ? t("config.channels.managedEndpoint") : channel.baseUrl || t("config.channels.missingUrl")}
                                                 </div>
                                             </div>
                                             <div className="flex shrink-0 gap-2">
                                                 <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
                                                     {t("common.edit")}
                                                 </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                {!isManagedChannel(channel) ? <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} /> : null}
                                             </div>
                                         </div>
                                     ))}
@@ -363,13 +382,17 @@ export function AppConfigModal() {
 }
 
 function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
+    const nextChannels = [...channels];
+    for (const managedChannel of config.channels.filter(isManagedChannel)) {
+        if (!nextChannels.some((channel) => channel.id === managedChannel.id)) nextChannels.push(managedChannel);
+    }
     const next: AiConfig = {
         ...config,
-        channels,
-        models: modelOptionsFromChannels(channels),
-        baseUrl: channels[0]?.baseUrl || config.baseUrl,
-        apiKey: channels[0]?.apiKey || config.apiKey,
-        apiFormat: channels[0]?.apiFormat || config.apiFormat,
+        channels: nextChannels,
+        models: modelOptionsFromChannels(nextChannels),
+        baseUrl: nextChannels[0]?.baseUrl || config.baseUrl,
+        apiKey: nextChannels[0]?.apiKey || config.apiKey,
+        apiFormat: nextChannels[0]?.apiFormat || config.apiFormat,
     };
     return {
         ...next,

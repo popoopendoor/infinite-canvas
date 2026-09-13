@@ -5,16 +5,16 @@ description: Run Infinite Canvas in a few steps
 
 # Quick Start
 
-To try the project, deploy or start the `web/` frontend.
+The OAuth and `money` billing flow requires the Docker stack: Nginx serves `web/` and proxies same-origin requests to the Node.js BFF.
 
 ## Deploy with Vercel
 
-Import the repository into Vercel. The root `vercel.json` builds `web/`. AI requests are sent directly from the browser to your OpenAI-compatible endpoint, so no additional application server is required.
+Vercel can still build the static `web/` frontend, but it does not run the BFF and therefore cannot satisfy the OAuth and billed-model deployment described here. Use Docker for the complete stack.
 
 ## Run locally
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:popoopendoor/infinite-canvas.git
 cd infinite-canvas/web
 bun install
 bun run dev
@@ -25,14 +25,18 @@ Open `http://localhost:3000`.
 ## Run with Docker
 
 ```bash
-docker build -t infinite-canvas .
-docker run --rm -p 3000:3000 infinite-canvas
+cd ..
+cp .env.example .env
+# Edit .env with the required integration settings.
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
 ## First-time setup
 
-- Open Settings and enter your `Base URL`, `API Key`, and model names.
+- Register the exact `/auth/callback` URL in Flarum OAuth and install/configure the separate Canvas Money Bridge.
+- An operator publishes models and fixed prices in the BFF `MODEL_CATALOG_JSON` and maps managed provider keys in `MODEL_PROVIDER_KEYS_JSON`. After login, those models appear automatically in the `Canvas managed` provider; users do not need to enter a provider key. Requests hold the current Flarum `money` balance before execution, capture on success, and release on a definite failure.
+- BYOK remains available: publish the model without a server key, then enter its `Base URL` and `API Key` in Settings. The browser encrypts the key for that request, and BYOK requests use the same billed BFF path.
 - Open `/prompts` to fetch prompt repositories directly from the browser and cache them in IndexedDB.
 - Configure WebDAV if you want to synchronize canvases, assets, and generation history across devices.
 
-Canvas projects and My Assets are primarily stored in the browser. The API key is also stored locally and used by the browser to call OpenAI-compatible endpoints directly.
+Canvas projects and My Assets are primarily stored in the browser. The BFF owns OAuth, published models, and billing; the browser does not receive OAuth or bridge tokens.

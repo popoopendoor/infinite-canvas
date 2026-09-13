@@ -3,10 +3,9 @@ import { RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { fetchChannelModels } from "@/services/api/image";
-import type { ModelChannel } from "@/stores/use-config-store";
+import { fetchPublishedModels } from "@/services/api/model-catalog";
+import { isManagedChannel, type ModelChannel } from "@/stores/use-config-store";
 
-// Channel model selector: fetch upstream models or add them manually, then include checked models in the channel list.
 export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onClose }: { open: boolean; channel: ModelChannel | null; selectedNames: string[]; onConfirm: (names: string[]) => void; onClose: () => void }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
@@ -51,6 +50,7 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
         });
 
     const addManual = () => {
+        if (isManagedChannel(channel || undefined)) return;
         const name = manual.trim();
         if (!name) return;
         if (!fetched.includes(name) && !existing.includes(name)) setFetched((current) => [name, ...current]);
@@ -60,14 +60,12 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
     };
 
     const fetchModels = async () => {
-        if (!channel) return;
-        if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
-            message.error(t("config.modelSelect.missingConfig"));
-            return;
-        }
+        if (!channel || isManagedChannel(channel)) return;
         setLoading(true);
         try {
-            const models = await fetchChannelModels(channel);
+            const published = await fetchPublishedModels();
+            if (!published) throw new Error(t("config.modelSelect.fetchFailed"));
+            const models = published.map((model) => model.id);
             setFetched(models);
             setActiveTab("new");
             message.success(t("config.modelSelect.fetched", { count: models.length }));
