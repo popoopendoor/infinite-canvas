@@ -7,6 +7,7 @@ data/
 *.log
 *.tsbuildinfo
 .DS_Store
+.rustdesk_*
 .idea
 web/dist
 

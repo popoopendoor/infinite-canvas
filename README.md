@@ -113,6 +113,8 @@ docker compose up -d --build
 
 登录后，服务端发布并配置了 provider key 的模型会自动加入 `Canvas 托管` 配置，调用会经过 BFF 的 money hold/capture 计费链路；也可以继续在配置中使用 BYOK。Flarum OAuth、bridge 和模型目录配置参见 [server/README.md](server/README.md)。
 
+完整的 Flarum OAuth + Money Bridge **跨机器部署**步骤（Flarum 侧扩展安装、OAuth 客户端注册、Canvas 侧 Docker 与 `.env`、模型目录发布、对账与回滚）见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 如果默认的 OpenAI 接口调用方式与您的 API 不同，仍可编辑并保存生图/视频脚本；计费生成目前仅执行已接入 BFF 的内置 adapter。
 
 ## 效果展示
